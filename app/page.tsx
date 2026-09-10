@@ -74,6 +74,14 @@ function download(data: Blob, name: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// Canonical signature so stale/autoplay checks ignore key ordering and trimming.
+function requestSignature(input: SpeechRequest): string {
+  try {
+    return JSON.stringify(validateRequest(input));
+  } catch {
+    return JSON.stringify(input);
+  }
+}
 function Waveform({
   samples,
   label,
@@ -116,9 +124,10 @@ export default function Home() {
   const { locale, changeLocale, t, errorText, number } = useI18n();
   const [request, setRequest] = useState<SpeechRequest>(initial);
   const [instant, setInstant] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
-  const instantRef = useRef(false);
-  instantRef.current = instant;
+  const autoPlayRef = useRef(false);
+  autoPlayRef.current = autoPlay;
   const lastAutoAttempt = useRef('');
   const [selected, setSelected] = useState('islander');
   const [status, setStatus] = useState<
@@ -251,19 +260,17 @@ export default function Home() {
     if (lastAutoAttempt.current === signature) return;
     const timer = setTimeout(() => {
       lastAutoAttempt.current = signature;
-      void generate(request, true).catch((e) => setError(e.message));
+      void generate(request, autoPlayRef.current).catch((e) =>
+        setError(e.message),
+      );
     }, 350);
     return () => clearTimeout(timer);
   }, [instant, request, status, generate]);
   useEffect(() => {
     if (
       !clip?.autoplay ||
-      !instantRef.current ||
-      clip.signature !==
-        JSON.stringify({
-          ...current.current,
-          text: current.current.text.trim(),
-        })
+      !autoPlayRef.current ||
+      clip.signature !== requestSignature(current.current)
     )
       return;
     // Wait until React has attached the newly generated clip to the audio element.
@@ -423,10 +430,7 @@ export default function Home() {
     }
   }
   const language = languages.find((l) => l.id === request.language)!;
-  const stale =
-    clip &&
-    clip.signature !==
-      JSON.stringify({ ...request, text: request.text.trim() });
+  const stale = clip && clip.signature !== requestSignature(request);
   return (
     <main className="shell">
       <header>
@@ -545,7 +549,6 @@ export default function Home() {
                   className="quiet"
                   onClick={() => {
                     setInstant(false);
-                    instantRef.current = false;
                     run.current++;
                     client.current?.dispose();
                     setStatus('error');
@@ -679,37 +682,70 @@ export default function Home() {
               {t('Reset')}
             </button>
           </div>
-          <div className="instant-control">
-            <TooltipProvider delay={300}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <label htmlFor="instant-apply">
-                      <Checkbox
-                        id="instant-apply"
-                        checked={instant}
-                        onCheckedChange={(checked) => {
-                          instantRef.current = checked;
-                          if (checked) lastAutoAttempt.current = '';
-                          setInstant(checked);
-                        }}
-                      />
-                      <span>{t('Apply instantly')}</span>
-                      <Info
-                        size={14}
-                        className="instant-info"
-                        aria-hidden="true"
-                      />
-                    </label>
-                  }
-                />
-                <TooltipContent side="bottom" align="start">
-                  {t(
-                    'Automatically regenerate and play after changes. Rapid adjustments are grouped.',
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+          <div className="instant-controls">
+            <div className="instant-control">
+              <TooltipProvider delay={300}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <label htmlFor="instant-apply">
+                        <Checkbox
+                          id="instant-apply"
+                          checked={instant}
+                          onCheckedChange={(checked) => {
+                            if (checked) lastAutoAttempt.current = '';
+                            setInstant(checked);
+                          }}
+                        />
+                        <span>{t('Apply instantly')}</span>
+                        <Info
+                          size={14}
+                          className="instant-info"
+                          aria-hidden="true"
+                        />
+                      </label>
+                    }
+                  />
+                  <TooltipContent side="bottom" align="start">
+                    {t(
+                      'Automatically regenerate after changes. Rapid adjustments are grouped.',
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <div className={`instant-control${instant ? '' : ' disabled'}`}>
+              <TooltipProvider delay={300}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <label htmlFor="auto-play">
+                        <Checkbox
+                          id="auto-play"
+                          checked={autoPlay}
+                          disabled={!instant}
+                          onCheckedChange={(checked) => {
+                            autoPlayRef.current = checked;
+                            setAutoPlay(checked);
+                          }}
+                        />
+                        <span>{t('Auto-play')}</span>
+                        <Info
+                          size={14}
+                          className="instant-info"
+                          aria-hidden="true"
+                        />
+                      </label>
+                    }
+                  />
+                  <TooltipContent side="bottom" align="start">
+                    {t(
+                      'Automatically play the audio as soon as it is re-generated.',
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
           <div className="knobs">
             <div className="control">
@@ -811,7 +847,9 @@ export default function Home() {
           <p className="control-note">
             {t(
               instant
-                ? 'Instant preview is on. Changes regenerate the voice automatically.'
+                ? autoPlay
+                  ? 'Instant preview is on. Changes regenerate and play automatically.'
+                  : 'Instant preview is on. Changes regenerate the voice automatically.'
                 : 'Changes apply to the next generated clip.',
             )}
           </p>

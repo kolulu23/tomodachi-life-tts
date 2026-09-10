@@ -597,8 +597,16 @@ footer a {
 .file-label input[hidden] {
   display: none;
 }
-.instant-control {
+.instant-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 20px;
+}
+.instant-control {
+  flex: 1 1 150px;
+  display: flex;
+  align-items: center;
   padding: 8px 12px;
   background: var(--background);
   border: 1px solid var(--border);
@@ -609,10 +617,18 @@ footer a {
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  white-space: nowrap;
+}
+.instant-control.disabled {
+  opacity: 0.55;
+}
+.instant-control.disabled label {
+  cursor: default;
 }
 .instant-info {
   color: var(--muted-foreground);
   opacity: 0.9;
+  flex-shrink: 0;
 }
 .preset-drawer-toggle {
   position: fixed;
