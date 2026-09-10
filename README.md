@@ -35,7 +35,7 @@ npm run build
 
 `dsp.js` processes PCM using biquad filters, modulated delay, ring modulation and sample/bit reduction, followed by DC removal, attenuation-only peak normalization, output gain and short fades. All DSP runs in `worker.js`, keeping synthesis off the UI thread. WAVs are mono 16-bit PCM at 22,050 Hz. `lib/voice/client.ts` handles worker lifetime, cancellation and errors; React only handles state and playback. The “before effects” clip retains synthesis settings but bypasses the DSP section.
 
-The engine is the pinned, unmodified Emscripten JavaScript distribution `@echogarden/espeak-ng-emscripten@0.3.5`. It is intentionally served as same-origin assets, avoiding CDN dependencies and bundler transformations of Emscripten. `scripts/vendor-engine.sh` reproduces it and checks the distribution checksum. See `public/engine/NOTICE.txt` and `LICENSE` for engine sources and licenses. Application code is GPL-3.0-or-later.
+The engine is the pinned, unmodified Emscripten JavaScript dependency `@echogarden/espeak-ng-emscripten@0.3.5`. It is intentionally served as same-origin assets, avoiding CDN dependencies and bundler transformations of Emscripten. `scripts/prepare-engine.mjs` copies the pinned dependency into the public assets before development, tests, and builds; npm verifies its lockfile integrity. `scripts/vendor-engine.sh` offers an alternative checksum-verified archive extraction. The generated engine JS/data are excluded from Git. See `public/engine/NOTICE.txt` and `LICENSE` for engine sources and licenses. Application code is GPL-3.0-or-later.
 
 ## Accuracy and scope
 
