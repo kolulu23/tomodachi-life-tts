@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/select';
 import {
   controls,
-  defaults,
+  initialPreset,
   genders,
   languages,
   presets,
@@ -64,7 +64,7 @@ type SavedPreset = { name: string; settings: VoiceSettings };
 const initial: SpeechRequest = {
   text: languages[0].sample,
   language: 'en-us',
-  settings: { ...defaults },
+  settings: { ...initialPreset.settings },
 };
 function download(data: Blob, name: string) {
   const url = URL.createObjectURL(data),
@@ -129,7 +129,7 @@ export default function Home() {
   const autoPlayRef = useRef(false);
   autoPlayRef.current = autoPlay;
   const lastAutoAttempt = useRef('');
-  const [selected, setSelected] = useState('islander');
+  const [selected, setSelected] = useState(initialPreset.id);
   const [status, setStatus] = useState<
     'loading' | 'ready' | 'working' | 'error'
   >('loading');
@@ -676,7 +676,9 @@ export default function Home() {
             </div>
             <button
               className="quiet"
-              onClick={() => applyPreset(defaults, 'islander')}
+              onClick={() =>
+                applyPreset(initialPreset.settings, initialPreset.id)
+              }
             >
               <RotateCcw size={14} />
               {t('Reset')}
@@ -759,9 +761,8 @@ export default function Home() {
                 <SelectTrigger aria-labelledby="label-gender">
                   <SelectValue>
                     {t(
-                      genders.find(
-                        (g) => g.value === request.settings.gender,
-                      )?.label || '',
+                      genders.find((g) => g.value === request.settings.gender)
+                        ?.label || '',
                     )}
                   </SelectValue>
                 </SelectTrigger>
@@ -785,7 +786,9 @@ export default function Home() {
                     <span id={`label-${c.key}`}>{t(c.label)}</span>
                     <output>
                       {number(
-                        request.settings[c.key as keyof VoiceSettings] as number,
+                        request.settings[
+                          c.key as keyof VoiceSettings
+                        ] as number,
                       )}
                       {t(c.unit)}
                     </output>
@@ -821,8 +824,10 @@ export default function Home() {
                       <span id={`label-${c.key}`}>{t(c.label)}</span>
                       <output>
                         {number(
-                        request.settings[c.key as keyof VoiceSettings] as number,
-                      )}
+                          request.settings[
+                            c.key as keyof VoiceSettings
+                          ] as number,
+                        )}
                         {t(c.unit)}
                       </output>
                     </div>
@@ -833,8 +838,10 @@ export default function Home() {
                       max={c.max}
                       step={c.step}
                       value={[
-                      request.settings[c.key as keyof VoiceSettings] as number,
-                    ]}
+                        request.settings[
+                          c.key as keyof VoiceSettings
+                        ] as number,
+                      ]}
                       onValueChange={(v) =>
                         update(c.key, Array.isArray(v) ? v[0] : v)
                       }
