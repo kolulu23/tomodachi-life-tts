@@ -1,24 +1,66 @@
 import { validateRequest } from './config.js';
 // Direct formant synthesis: transpose the glottal source, adjust resonances separately.
 // This avoids resampling speech, which would also change timing and Chinese tones.
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 export function variantDefinition(s) {
+  const isFemale = s.gender === 'female';
+  const age = Math.round(s.age);
   const scale = Math.pow(2, s.transpose / 12);
-  const formant = Math.round(100 * Math.pow(2, -s.depth / 100));
+
+  // Fundamental frequency: gender baseline + age curve, then transpose shift.
+  const genderPitch = isFemale ? 148 : 82;
+  const agePitch =
+    age <= 30
+      ? lerp(1.35, 1.0, (age - 5) / 25) // child → adult
+      : lerp(1.0, 0.86, (age - 30) / 60); // adult → elder
+  const base = Math.round(genderPitch * agePitch * scale);
+  const range = Math.round(base * 1.45);
+
+  // Vocal-tract (formant) length: gender table, age curve, existing depth.
+  const baseFreq = isFemale
+    ? [108, 120, 118, 118, 120, 120, 114, 112, 112]
+    : [100, 100, 100, 100, 100, 100, 100, 100, 100];
+  const ageFormant =
+    age <= 30
+      ? lerp(1.24, 1.0, (age - 5) / 25)
+      : lerp(1.0, 0.93, (age - 30) / 60);
+  const depthFactor = Math.pow(2, -s.depth / 100);
+  const strength = isFemale ? 85 : 100; // female: softer peaks
+  const width = isFemale ? 150 : 100; // female: wider bandwidths
+  const highRolloff = age <= 50 ? 1 : lerp(1, 0.45, (age - 50) / 40);
+
   const stress = Math.round(16 + s.accent * 0.2);
+  const roughness = clamp(
+    Math.round(s.roughness + (age <= 45 ? 0 : lerp(0, 2, (age - 45) / 45))),
+    0,
+    7,
+  );
+  const flutter = Math.round(age <= 40 ? 0 : lerp(0, 16, (age - 40) / 50));
+
+  const formants = [];
+  for (let i = 0; i < 9; i++) {
+    const freq =
+      i === 0
+        ? Math.round(baseFreq[0] * ageFormant) // formant 0 stays depth-independent
+        : Math.round(baseFreq[i] * ageFormant * depthFactor);
+    const str = Math.round(strength * (i >= 6 ? highRolloff : 1));
+    formants.push(`formant ${i} ${freq} ${str} ${width}`);
+  }
+
   return (
     [
       'language variant',
       'name Island custom',
-      `pitch ${Math.round(82 * scale)} ${Math.round(118 * scale)}`,
-      ...Array.from(
-        { length: 9 },
-        (_, i) => `formant ${i} ${i === 0 ? 100 : formant} 100 100`,
-      ),
+      `gender ${isFemale ? 'female' : 'male'} ${age}`,
+      `pitch ${base} ${range}`,
+      ...formants,
       `stressAmp 16 16 20 20 ${stress} ${stress} ${stress + 2} ${stress + 4}`,
       `breath 0 ${Array(7)
         .fill(Math.round(s.breath * 0.08))
         .join(' ')}`,
-      `roughness ${Math.round(s.roughness)}`,
+      `roughness ${roughness}`,
+      `flutter ${flutter}`,
     ].join('\n') + '\n'
   );
 }

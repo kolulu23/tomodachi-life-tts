@@ -3,12 +3,30 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AudioLines,
   Download,
+  Info,
   LoaderCircle,
   Play,
   RotateCcw,
   Shuffle,
   Square,
+  PanelRightOpen,
+  X,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetTitle,
+  SheetDescription,
+  SheetClose,
+} from '@/components/ui/sheet';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Slider } from '@/components/ui/slider';
 import {
   Select,
@@ -20,6 +38,7 @@ import {
 import {
   controls,
   defaults,
+  genders,
   languages,
   presets,
   validateRequest,
@@ -32,7 +51,15 @@ import type {
   VoiceSettings,
 } from '@/lib/voice/types';
 
-type Clip = SpeechResult & { url: string; dryUrl: string; signature: string };
+import { useI18n, type Notice } from '@/lib/i18n/use-i18n';
+import { localeOptions } from '@/lib/i18n/core.js';
+
+type Clip = SpeechResult & {
+  url: string;
+  dryUrl: string;
+  signature: string;
+  autoplay: boolean;
+};
 type SavedPreset = { name: string; settings: VoiceSettings };
 const initial: SpeechRequest = {
   text: languages[0].sample,
@@ -47,7 +74,13 @@ function download(data: Blob, name: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Waveform({ samples }: { samples: Float32Array }) {
+function Waveform({
+  samples,
+  label,
+}: {
+  samples: Float32Array;
+  label: string;
+}) {
   const bars = Array.from({ length: 140 }, (_, i) => {
     let peak = 0;
     const start = Math.floor((i * samples.length) / 140),
@@ -60,7 +93,7 @@ function Waveform({ samples }: { samples: Float32Array }) {
     <svg
       viewBox="0 0 560 70"
       role="img"
-      aria-label="Waveform of the generated voice"
+      aria-label={label}
       className="waveform"
     >
       <line x1="0" y1="35" x2="560" y2="35" stroke="#dce5e1" />
@@ -80,14 +113,20 @@ function Waveform({ samples }: { samples: Float32Array }) {
   );
 }
 export default function Home() {
+  const { locale, changeLocale, t, errorText, number } = useI18n();
   const [request, setRequest] = useState<SpeechRequest>(initial);
+  const [instant, setInstant] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const instantRef = useRef(false);
+  instantRef.current = instant;
+  const lastAutoAttempt = useRef('');
   const [selected, setSelected] = useState('islander');
   const [status, setStatus] = useState<
     'loading' | 'ready' | 'working' | 'error'
   >('loading');
-  const [message, setMessage] = useState(
-    'Loading speech data (24 MB, once per browser cache)…',
-  );
+  const [message, setMessage] = useState<Notice>({
+    key: 'Loading speech data (24 MB, once per browser cache)…',
+  });
   const [error, setError] = useState('');
   const [clip, setClip] = useState<Clip | null>(null);
   const [saved, setSaved] = useState<SavedPreset[]>([]);
@@ -98,6 +137,7 @@ export default function Home() {
     run = useRef(0);
   const wetAudio = useRef<HTMLAudioElement>(null),
     dryAudio = useRef<HTMLAudioElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const current = useRef(request);
   current.current = request;
   const statusRef = useRef(status);
@@ -105,13 +145,13 @@ export default function Home() {
   const load = useCallback(async () => {
     setStatus('loading');
     setError('');
-    setMessage('Loading speech data (24 MB, once per browser cache)…');
+    setMessage({ key: 'Loading speech data (24 MB, once per browser cache)…' });
     client.current ??= new VoiceClient();
     try {
       await client.current.init();
       if (mounted.current) {
         setStatus('ready');
-        setMessage('Speech engine ready · audio stays on this device');
+        setMessage({ key: 'Speech engine ready · audio stays on this device' });
       }
     } catch (e) {
       if (mounted.current) {
@@ -151,15 +191,16 @@ export default function Home() {
     };
   }, [load]);
   const generate = useCallback(
-    async (input: SpeechRequest = current.current) => {
+    async (input: SpeechRequest = current.current, autoplay = false) => {
       if (statusRef.current === 'working' || statusRef.current === 'loading')
         throw new Error('Wait for the current operation to finish.');
       const validated = validateRequest(input) as SpeechRequest;
+      lastAutoAttempt.current = JSON.stringify(input);
       const token = ++run.current;
       statusRef.current = 'working';
       setStatus('working');
       setError('');
-      setMessage('Synthesizing and shaping your voice…');
+      setMessage({ key: 'Synthesizing and shaping your voice…' });
       wetAudio.current?.pause();
       dryAudio.current?.pause();
       try {
@@ -176,6 +217,7 @@ export default function Home() {
             new Blob([result.dryWav], { type: 'audio/wav' }),
           ),
           signature: JSON.stringify(validated),
+          autoplay,
         };
         if (clipRef.current) {
           URL.revokeObjectURL(clipRef.current.url);
@@ -184,7 +226,7 @@ export default function Home() {
         clipRef.current = next;
         setClip(next);
         setStatus('ready');
-        setMessage('Voice generated. Press play to listen.');
+        setMessage({ key: 'Voice generated. Press play to listen.' });
         return {
           durationSeconds: result.samples.length / result.sampleRate,
           sampleRate: result.sampleRate,
@@ -194,13 +236,44 @@ export default function Home() {
         if (mounted.current && token === run.current) {
           setStatus('ready');
           setError((e as Error).message);
-          setMessage('Ready to try again.');
+          setMessage({ key: 'Ready to try again.' });
         }
         throw e;
       }
     },
     [],
   );
+  // Coalesce rapid changes and wait for the worker rather than overlapping renders.
+  // Remember attempts (including failures) so a failed preview never retries forever.
+  useEffect(() => {
+    if (!instant || status !== 'ready' || !request.text.trim()) return;
+    const signature = JSON.stringify(request);
+    if (lastAutoAttempt.current === signature) return;
+    const timer = setTimeout(() => {
+      lastAutoAttempt.current = signature;
+      void generate(request, true).catch((e) => setError(e.message));
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [instant, request, status, generate]);
+  useEffect(() => {
+    if (
+      !clip?.autoplay ||
+      !instantRef.current ||
+      clip.signature !==
+        JSON.stringify({
+          ...current.current,
+          text: current.current.text.trim(),
+        })
+    )
+      return;
+    // Wait until React has attached the newly generated clip to the audio element.
+    void wetAudio.current?.play().catch(() => {
+      if (mounted.current)
+        setMessage({
+          key: 'Voice updated. Press play if your browser blocks autoplay.',
+        });
+    });
+  }, [clip]);
   const generateRef = useRef(generate);
   generateRef.current = generate;
   useEffect(() => {
@@ -235,12 +308,18 @@ export default function Home() {
             language: { type: 'string', enum: languages.map((l) => l.id) },
             settings: {
               type: 'object',
-              properties: Object.fromEntries(
-                controls.map((c) => [
-                  c.key,
-                  { type: 'number', minimum: c.min, maximum: c.max },
-                ]),
-              ),
+              properties: {
+                gender: {
+                  type: 'string',
+                  enum: genders.map((g) => g.value),
+                },
+                ...Object.fromEntries(
+                  controls.map((c) => [
+                    c.key,
+                    { type: 'number', minimum: c.min, maximum: c.max },
+                  ]),
+                ),
+              },
             },
           },
           required: ['text', 'language', 'settings'],
@@ -249,6 +328,7 @@ export default function Home() {
         annotations: { readOnlyHint: false },
         execute(input) {
           const value = validateRequest(input) as SpeechRequest;
+          lastAutoAttempt.current = JSON.stringify(value);
           current.current = value;
           setRequest(value);
           setSelected('custom');
@@ -283,6 +363,10 @@ export default function Home() {
     setRequest((r) => ({ ...r, settings: { ...r.settings, [key]: value } }));
     setSelected('custom');
   }
+  function setGender(value: string) {
+    setRequest((r) => ({ ...r, settings: { ...r.settings, gender: value } }));
+    setSelected('custom');
+  }
   function applyPreset(settings: VoiceSettings, id: string) {
     setRequest((r) => ({ ...r, settings: { ...settings } }));
     setSelected(id);
@@ -306,7 +390,7 @@ export default function Home() {
       localStorage.setItem('island-presets-v1', JSON.stringify(next));
       setSaved(next);
       setPresetName('');
-      setMessage(`Saved “${name}” on this device.`);
+      setMessage({ key: 'Saved “{name}” on this device.', values: { name } });
       setError('');
     } catch {
       setError(
@@ -318,13 +402,24 @@ export default function Home() {
     try {
       if (file.size > 20000) throw new Error('Preset file is too large.');
       const parsed = JSON.parse(await file.text());
-      if (parsed.version !== 1) throw new Error('Unsupported preset format.');
+      if (!parsed || parsed.version !== 1)
+        throw new Error('Unsupported preset format.');
       applyPreset(validateSettings(parsed.settings) as VoiceSettings, 'custom');
-      setMessage(
-        `Imported ${typeof parsed.name === 'string' ? parsed.name.slice(0, 40) : 'voice preset'}.`,
-      );
+      setMessage({
+        key: 'Imported {name}.',
+        values: {
+          name: typeof parsed.name === 'string' ? parsed.name.slice(0, 40) : '',
+        },
+        fallbackName: typeof parsed.name !== 'string',
+      });
     } catch (e) {
-      setError((e as Error).message);
+      setError(
+        e instanceof SyntaxError ||
+          e instanceof TypeError ||
+          e instanceof DOMException
+          ? 'Could not import the preset. Choose a valid preset JSON file.'
+          : (e as Error).message,
+      );
     }
   }
   const language = languages.find((l) => l.id === request.language)!;
@@ -337,21 +432,42 @@ export default function Home() {
       <header>
         <div className="brand">
           <AudioLines />
-          <h1>Island Voice Lab</h1>
-          <span className="badge">WORKBENCH</span>
+          <h1>{t('Island Voice Lab')}</h1>
+          <span className="badge">{t('WORKBENCH')}</span>
         </div>
-        <span className="muted">Tomodachi-inspired speech</span>
+        <div className="header-settings">
+          <span className="muted">{t('Tomodachi-inspired speech')}</span>
+          <div className="ui-locale">
+            <label id="ui-locale-label">{t('Interface language')}</label>
+            <Select value={locale} onValueChange={changeLocale}>
+              <SelectTrigger aria-labelledby="ui-locale-label">
+                <SelectValue>
+                  {localeOptions.find((option) => option.id === locale)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {localeOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    <span lang={option.id}>{option.label}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </header>
       <div className="workspace">
         <div className="left-column">
           <section className="panel">
             <div className="section-heading">
-              <h2>Give your character a voice</h2>
+              <h2>{t('Give your character a voice')}</h2>
               <span className="step">01</span>
             </div>
             <div className="language-row">
               <div className="language-field">
-                <label id="language-label">Language & pronunciation</label>
+                <label id="language-label">
+                  {t('Language & pronunciation')}
+                </label>
                 <Select
                   value={request.language}
                   onValueChange={(v) =>
@@ -362,12 +478,12 @@ export default function Home() {
                     aria-labelledby="language-label"
                     className="language-select"
                   >
-                    <SelectValue>{language.label}</SelectValue>
+                    <SelectValue>{t(language.label)}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {languages.map((l) => (
                       <SelectItem key={l.id} value={l.id}>
-                        {l.label}
+                        {t(l.label)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -379,12 +495,14 @@ export default function Home() {
                   setRequest((r) => ({ ...r, text: language.sample }))
                 }
               >
-                Use sample text
+                {t('Use sample text')}
               </button>
             </div>
             <div className="text-label">
-              <label htmlFor="speech">Text to speak</label>
-              <span className="muted">{request.text.length} / 1,000</span>
+              <label htmlFor="speech">{t('Text to speak')}</label>
+              <span className="muted">
+                {number(request.text.length)} / {number(1000)}
+              </span>
             </div>
             <textarea
               id="speech"
@@ -397,8 +515,9 @@ export default function Home() {
             />
             {(request.language === 'cmn' || request.language === 'yue') && (
               <p className="language-note">
-                Chinese characters supported. Keep intonation above zero to help
-                preserve lexical tones. Pronunciation is deliberately synthetic.
+                {t(
+                  'Chinese characters supported. Keep intonation above zero to help preserve lexical tones. Pronunciation is deliberately synthetic.',
+                )}
               </p>
             )}
             <div className="actions">
@@ -419,24 +538,27 @@ export default function Home() {
                 ) : (
                   <Play size={16} />
                 )}{' '}
-                {status === 'working' ? 'Generating…' : 'Generate voice'}
+                {t(status === 'working' ? 'Generating…' : 'Generate voice')}
               </button>
               {(status === 'working' || status === 'loading') && (
                 <button
                   className="quiet"
                   onClick={() => {
+                    setInstant(false);
+                    instantRef.current = false;
                     run.current++;
                     client.current?.dispose();
                     setStatus('error');
                     setError('Operation cancelled. Retry when you’re ready.');
                   }}
                 >
-                  <Square size={14} /> Cancel
+                  <Square size={14} />
+                  {t('Cancel')}
                 </button>
               )}
               {status === 'error' && (
                 <button className="quiet" onClick={() => void load()}>
-                  Retry engine
+                  {t('Retry engine')}
                 </button>
               )}
             </div>
@@ -444,34 +566,45 @@ export default function Home() {
               <span
                 className={`status-dot ${status === 'ready' ? 'ready' : ''}`}
               />
-              {message}
+              {t(
+                message.key,
+                message.fallbackName
+                  ? { name: t('voice preset') }
+                  : message.values,
+              )}
             </p>
             {error && (
               <p className="error" role="alert">
-                {error}
+                {errorText(error)}
               </p>
             )}
           </section>
           <section className="panel">
             <div className="section-heading">
-              <h2>Listen & export</h2>
+              <h2>{t('Listen & export')}</h2>
               <span className="step">02</span>
             </div>
             {clip ? (
               <>
                 <div className="clip-meta">
                   <span>
-                    {(clip.samples.length / clip.sampleRate).toFixed(2)} sec ·{' '}
-                    {clip.sampleRate.toLocaleString()} Hz · WAV
+                    {number(clip.samples.length / clip.sampleRate, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{' '}
+                    {t('sec')} · {number(clip.sampleRate)} Hz · WAV
                   </span>
                   {stale && (
                     <span className="changed">
-                      Settings changed · regenerate
+                      {t('Settings changed · regenerate')}
                     </span>
                   )}
                 </div>
-                <Waveform samples={clip.samples} />
-                <label htmlFor="wet-audio">Your shaped voice</label>
+                <Waveform
+                  samples={clip.samples}
+                  label={t('Waveform of the generated voice')}
+                />
+                <label htmlFor="wet-audio">{t('Your shaped voice')}</label>
                 <audio
                   id="wet-audio"
                   ref={wetAudio}
@@ -485,17 +618,19 @@ export default function Home() {
                     href={clip.url}
                     download="island-voice.wav"
                   >
-                    <Download size={15} /> Download WAV
+                    <Download size={15} />
+                    {t('Download WAV')}
                   </a>
                 </div>
                 <details>
-                  <summary>Compare before effects</summary>
+                  <summary>{t('Compare before effects')}</summary>
                   <p className="muted">
-                    Same pitch, formants and speech settings, with the effects
-                    section bypassed.
+                    {t(
+                      'Same pitch, formants and speech settings, with the effects section bypassed.',
+                    )}
                   </p>
                   <audio
-                    aria-label="Voice before effects"
+                    aria-label={t('Voice before effects')}
                     ref={dryAudio}
                     controls
                     src={clip.dryUrl}
@@ -506,27 +641,204 @@ export default function Home() {
                     href={clip.dryUrl}
                     download="island-voice-dry.wav"
                   >
-                    Download before effects
+                    {t('Download before effects')}
                   </a>
                 </details>
                 <details>
-                  <summary>Phoneme trace</summary>
+                  <summary>{t('Phoneme trace')}</summary>
                   <pre className="phonemes">{clip.phonemes}</pre>
                 </details>
               </>
             ) : (
               <div className="empty-audio">
                 <AudioLines size={28} />
-                <p>Your voice will appear here.</p>
+                <p>{t('Your voice will appear here.')}</p>
                 <span className="muted">
-                  Generate a clip to listen, compare, and download.
+                  {t('Generate a clip to listen, compare, and download.')}
                 </span>
               </div>
             )}
           </section>
-          <section className="panel">
+        </div>
+        <section className="panel controls-panel">
+          <div className="section-heading">
+            <div>
+              <h2>{t('Shape the voice')}</h2>
+              <p className="muted selected-name">
+                {t(
+                  presets.find((p) => p.id === selected)?.name ||
+                    'Custom voice',
+                )}
+              </p>
+            </div>
+            <button
+              className="quiet"
+              onClick={() => applyPreset(defaults, 'islander')}
+            >
+              <RotateCcw size={14} />
+              {t('Reset')}
+            </button>
+          </div>
+          <div className="instant-control">
+            <TooltipProvider delay={300}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <label htmlFor="instant-apply">
+                      <Checkbox
+                        id="instant-apply"
+                        checked={instant}
+                        onCheckedChange={(checked) => {
+                          instantRef.current = checked;
+                          if (checked) lastAutoAttempt.current = '';
+                          setInstant(checked);
+                        }}
+                      />
+                      <span>{t('Apply instantly')}</span>
+                      <Info
+                        size={14}
+                        className="instant-info"
+                        aria-hidden="true"
+                      />
+                    </label>
+                  }
+                />
+                <TooltipContent side="bottom" align="start">
+                  {t(
+                    'Automatically regenerate and play after changes. Rapid adjustments are grouped.',
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          <div className="knobs">
+            <div className="control">
+              <div className="control-label">
+                <span id="label-gender">{t('Gender')}</span>
+              </div>
+              <Select
+                value={request.settings.gender}
+                onValueChange={(v) => v && setGender(v)}
+              >
+                <SelectTrigger aria-labelledby="label-gender">
+                  <SelectValue>
+                    {t(
+                      genders.find(
+                        (g) => g.value === request.settings.gender,
+                      )?.label || '',
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {genders.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>
+                      {t(g.label)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <small id="hint-gender">
+                {t('Sets the voice to a masculine or feminine register.')}
+              </small>
+            </div>
+            {controls
+              .filter((c) => c.group === 'voice')
+              .map((c) => (
+                <div className="control" key={c.key}>
+                  <div className="control-label">
+                    <span id={`label-${c.key}`}>{t(c.label)}</span>
+                    <output>
+                      {number(
+                        request.settings[c.key as keyof VoiceSettings] as number,
+                      )}
+                      {t(c.unit)}
+                    </output>
+                  </div>
+                  <Slider
+                    aria-labelledby={`label-${c.key}`}
+                    aria-describedby={`hint-${c.key}`}
+                    min={c.min}
+                    max={c.max}
+                    step={c.step}
+                    value={[
+                      request.settings[c.key as keyof VoiceSettings] as number,
+                    ]}
+                    onValueChange={(v) =>
+                      update(c.key, Array.isArray(v) ? v[0] : v)
+                    }
+                  />
+                  <small id={`hint-${c.key}`}>{t(c.hint)}</small>
+                </div>
+              ))}
+          </div>
+          <details className="effects" open>
+            <summary>
+              {t('Effects')}{' '}
+              <span className="muted">{t('· texture & color')}</span>
+            </summary>
+            <div className="knobs">
+              {controls
+                .filter((c) => c.group === 'effects')
+                .map((c) => (
+                  <div className="control" key={c.key}>
+                    <div className="control-label">
+                      <span id={`label-${c.key}`}>{t(c.label)}</span>
+                      <output>
+                        {number(
+                        request.settings[c.key as keyof VoiceSettings] as number,
+                      )}
+                        {t(c.unit)}
+                      </output>
+                    </div>
+                    <Slider
+                      aria-labelledby={`label-${c.key}`}
+                      aria-describedby={`hint-${c.key}`}
+                      min={c.min}
+                      max={c.max}
+                      step={c.step}
+                      value={[
+                      request.settings[c.key as keyof VoiceSettings] as number,
+                    ]}
+                      onValueChange={(v) =>
+                        update(c.key, Array.isArray(v) ? v[0] : v)
+                      }
+                    />
+                    <small id={`hint-${c.key}`}>{t(c.hint)}</small>
+                  </div>
+                ))}
+            </div>
+          </details>
+          <p className="control-note">
+            {t(
+              instant
+                ? 'Instant preview is on. Changes regenerate the voice automatically.'
+                : 'Changes apply to the next generated clip.',
+            )}
+          </p>
+        </section>
+      </div>
+      <Sheet open={presetsOpen} onOpenChange={setPresetsOpen}>
+        <SheetTrigger
+          className="preset-drawer-toggle"
+          aria-label={t('Open presets')}
+        >
+          <PanelRightOpen size={18} />
+          <span>{t('Presets')}</span>
+        </SheetTrigger>
+        <SheetContent
+          side="right"
+          className="presets-drawer"
+          showCloseButton={false}
+        >
+          <SheetClose
+            className="quiet drawer-close"
+            aria-label={t('Close presets')}
+          >
+            <X size={20} />
+          </SheetClose>
+          <div className="presets-drawer-body">
             <div className="section-heading">
-              <h2>Character presets</h2>
+              <SheetTitle>{t('Character presets')}</SheetTitle>
               <button
                 className="quiet"
                 onClick={() => {
@@ -534,9 +846,26 @@ export default function Home() {
                   applyPreset(p.settings, p.id);
                 }}
               >
-                <Shuffle size={15} /> Surprise me
+                <Shuffle size={15} />
+                {t('Surprise me')}
               </button>
             </div>
+            <SheetDescription>
+              {t('Choose a preset, then fine-tune the voice controls.')}
+            </SheetDescription>
+            <p className="muted" role="status">
+              {t(
+                message.key,
+                message.fallbackName
+                  ? { name: t('voice preset') }
+                  : message.values,
+              )}
+            </p>
+            {error && (
+              <p className="error" role="alert">
+                {errorText(error)}
+              </p>
+            )}
             <div className="presets">
               {presets.map((p) => (
                 <button
@@ -545,26 +874,26 @@ export default function Home() {
                   className={`preset ${selected === p.id ? 'active' : ''}`}
                   onClick={() => applyPreset(p.settings, p.id)}
                 >
-                  <span>{p.name}</span>
-                  <small>{p.description}</small>
+                  <span>{t(p.name)}</span>
+                  <small>{t(p.description)}</small>
                 </button>
               ))}
             </div>
             <details className="saved-presets">
               <summary>
-                Your presets{' '}
-                <span className="muted">· saved on this device</span>
+                {t('Your presets')}{' '}
+                <span className="muted">{t('· saved on this device')}</span>
               </summary>
               <div className="save-row">
                 <input
-                  aria-label="Preset name"
-                  placeholder="Name this voice"
+                  aria-label={t('Preset name')}
+                  placeholder={t('Name this voice')}
                   maxLength={40}
                   value={presetName}
                   onChange={(e) => setPresetName(e.target.value)}
                 />
                 <button className="secondary" onClick={savePreset}>
-                  Save
+                  {t('Save')}
                 </button>
               </div>
               {saved.length > 0 && (
@@ -592,8 +921,10 @@ export default function Home() {
                               version: 1,
                               name:
                                 presetName ||
-                                presets.find((p) => p.id === selected)?.name ||
-                                'Custom voice',
+                                t(
+                                  presets.find((p) => p.id === selected)
+                                    ?.name || 'Custom voice',
+                                ),
                               settings: request.settings,
                             },
                             null,
@@ -606,12 +937,20 @@ export default function Home() {
                     )
                   }
                 >
-                  Export preset JSON
+                  {t('Export preset JSON')}
                 </button>
-                <label className="file-label">
-                  Import preset
+                <div className="file-label">
+                  <button
+                    className="quiet"
+                    onClick={() => importInput.current?.click()}
+                  >
+                    {t('Import preset')}
+                  </button>
                   <input
                     type="file"
+                    ref={importInput}
+                    hidden
+                    aria-label={t('Import preset')}
                     accept=".json,application/json"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
@@ -619,102 +958,25 @@ export default function Home() {
                       e.target.value = '';
                     }}
                   />
-                </label>
+                </div>
               </div>
             </details>
-          </section>
-        </div>
-        <section className="panel controls-panel">
-          <div className="section-heading">
-            <div>
-              <h2>Shape the voice</h2>
-              <p className="muted selected-name">
-                {presets.find((p) => p.id === selected)?.name || 'Custom voice'}
-              </p>
-            </div>
-            <button
-              className="quiet"
-              onClick={() => applyPreset(defaults, 'islander')}
-            >
-              <RotateCcw size={14} /> Reset
-            </button>
           </div>
-          <div className="knobs">
-            {controls
-              .filter((c) => c.group === 'voice')
-              .map((c) => (
-                <div className="control" key={c.key}>
-                  <div className="control-label">
-                    <span id={`label-${c.key}`}>{c.label}</span>
-                    <output>
-                      {request.settings[c.key as keyof VoiceSettings]}
-                      {c.unit}
-                    </output>
-                  </div>
-                  <Slider
-                    aria-labelledby={`label-${c.key}`}
-                    aria-describedby={`hint-${c.key}`}
-                    min={c.min}
-                    max={c.max}
-                    step={c.step}
-                    value={[request.settings[c.key as keyof VoiceSettings]]}
-                    onValueChange={(v) =>
-                      update(c.key, Array.isArray(v) ? v[0] : v)
-                    }
-                  />
-                  <small id={`hint-${c.key}`}>{c.hint}</small>
-                </div>
-              ))}
-          </div>
-          <details className="effects" open>
-            <summary>
-              Effects <span className="muted">· texture & color</span>
-            </summary>
-            <div className="knobs">
-              {controls
-                .filter((c) => c.group === 'effects')
-                .map((c) => (
-                  <div className="control" key={c.key}>
-                    <div className="control-label">
-                      <span id={`label-${c.key}`}>{c.label}</span>
-                      <output>
-                        {request.settings[c.key as keyof VoiceSettings]}
-                        {c.unit}
-                      </output>
-                    </div>
-                    <Slider
-                      aria-labelledby={`label-${c.key}`}
-                      aria-describedby={`hint-${c.key}`}
-                      min={c.min}
-                      max={c.max}
-                      step={c.step}
-                      value={[request.settings[c.key as keyof VoiceSettings]]}
-                      onValueChange={(v) =>
-                        update(c.key, Array.isArray(v) ? v[0] : v)
-                      }
-                    />
-                    <small id={`hint-${c.key}`}>{c.hint}</small>
-                  </div>
-                ))}
-            </div>
-          </details>
-          <p className="control-note">
-            Changes apply to the next generated clip.
-          </p>
-        </section>
-      </div>
+        </SheetContent>
+      </Sheet>
       <footer>
         <span>
-          Independent experiment · Inspired by Tomodachi Life, not Nintendo’s
-          engine.
+          {t(
+            'Independent experiment · Inspired by Tomodachi Life, not Nintendo’s engine.',
+          )}
         </span>
         <span>
-          Powered by{' '}
+          {t('Powered by')}{' '}
           <a href="https://github.com/echogarden-project/espeak-ng-emscripten">
             eSpeak NG
           </a>{' '}
           · <a href="/engine/COPYING">GPL-3.0</a> ·{' '}
-          <a href="/engine/NOTICE.txt">Source & credits</a>
+          <a href="/engine/NOTICE.txt">{t('Source & credits')}</a>
         </span>
       </footer>
     </main>

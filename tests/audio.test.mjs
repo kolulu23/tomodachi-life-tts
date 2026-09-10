@@ -62,6 +62,7 @@ test('speed changes duration independently from source pitch and formants', () =
 test('each synthesis control audibly changes generated PCM', () => {
   const baseline = render(defaults).samples;
   for (const key of [
+    'age',
     'pitch',
     'transpose',
     'depth',
@@ -74,6 +75,11 @@ test('each synthesis control audibly changes generated PCM', () => {
     const changed = render({ ...defaults, [key]: c.max }).samples;
     assert.notDeepEqual(changed, baseline, key);
   }
+  assert.notDeepEqual(
+    render({ ...defaults, gender: 'female' }).samples,
+    baseline,
+    'gender',
+  );
 });
 test('each DSP control changes PCM and every preset remains finite and unclipped', () => {
   const raw = render().samples,
@@ -129,6 +135,8 @@ test('invalid text, languages, and imported settings are rejected', () => {
   );
   for (const value of [NaN, Infinity, -1, 101, '50'])
     assert.throws(() => validateSettings({ ...defaults, intonation: value }));
+  for (const value of ['x', 'FEMALE', 1])
+    assert.throws(() => validateSettings({ ...defaults, gender: value }));
   for (const value of [null, [], true])
     assert.throws(() => validateSettings(value));
   assert.equal(

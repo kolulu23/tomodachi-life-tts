@@ -1,6 +1,16 @@
 /** Shared, serializable voice settings. No browser dependencies. */
 export const controls = [
   {
+    key: 'age',
+    label: 'Age',
+    min: 5,
+    max: 90,
+    step: 1,
+    unit: ' yr',
+    group: 'voice',
+    hint: 'Character age in years; children sound higher, elders waver more.',
+  },
+  {
     key: 'pitch',
     label: 'Base pitch',
     min: 0,
@@ -162,6 +172,8 @@ export const controls = [
   },
 ];
 export const defaults = {
+  gender: 'male',
+  age: 30,
   pitch: 50,
   transpose: 3,
   speed: 175,
@@ -243,6 +255,10 @@ export const languages = [
     sample: 'Xin chào! Chào mừng đến với hòn đảo nhỏ của tôi.',
   },
 ];
+export const genders = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+];
 const preset = (id, name, description, settings) => ({
   id,
   name,
@@ -252,6 +268,8 @@ const preset = (id, name, description, settings) => ({
 export const presets = [
   preset('islander', 'Islander', 'Bright, familiar chatter', {}),
   preset('tiny', 'Tiny neighbor', 'Small and full of energy', {
+    gender: 'female',
+    age: 9,
     pitch: 65,
     transpose: 7,
     depth: -22,
@@ -267,6 +285,8 @@ export const presets = [
     nasal: 45,
   }),
   preset('deep', 'Deep thinker', 'Low and unhurried', {
+    gender: 'male',
+    age: 46,
     pitch: 30,
     transpose: -6,
     depth: 28,
@@ -275,6 +295,8 @@ export const presets = [
     brightness: -25,
   }),
   preset('dream', 'Daydreamer', 'Soft with a little wobble', {
+    gender: 'female',
+    age: 26,
     pitch: 56,
     transpose: 2,
     breath: 35,
@@ -299,6 +321,8 @@ export const presets = [
     robot: 35,
   }),
   preset('grumpy', 'Grumpy neighbor', 'Gravelly and unimpressed', {
+    gender: 'male',
+    age: 58,
     pitch: 28,
     transpose: -3,
     depth: 20,
@@ -307,6 +331,8 @@ export const presets = [
     speed: 155,
   }),
   preset('bubbly', 'Bubbly friend', 'A bouncy, smiling voice', {
+    gender: 'female',
+    age: 22,
     pitch: 65,
     transpose: 5,
     depth: -15,
@@ -331,6 +357,8 @@ export const presets = [
     chorus: 0,
   }),
   preset('elder', 'Village elder', 'Measured and quavering', {
+    gender: 'male',
+    age: 78,
     pitch: 35,
     transpose: -4,
     speed: 125,
@@ -340,6 +368,8 @@ export const presets = [
     vibratoRate: 4,
   }),
   preset('story', 'Storyteller', 'Clear and expressive', {
+    gender: 'male',
+    age: 38,
     pitch: 48,
     transpose: 0,
     depth: 0,
@@ -349,6 +379,8 @@ export const presets = [
     crush: 0,
   }),
   preset('whisper', 'Airy sprite', 'Light and breathy', {
+    gender: 'female',
+    age: 24,
     pitch: 62,
     transpose: 5,
     depth: -12,
@@ -364,6 +396,39 @@ export const presets = [
     chorus: 55,
     vibrato: 70,
     vibratoRate: 9,
+  }),
+  preset('kid', 'Little kid', 'High, bouncy and bright', {
+    gender: 'female',
+    age: 7,
+    pitch: 62,
+    transpose: 4,
+    depth: -20,
+    speed: 210,
+    intonation: 80,
+    accent: 60,
+  }),
+  preset('sister', 'Big sister', 'Warm, cheerful and clear', {
+    gender: 'female',
+    age: 27,
+    pitch: 56,
+    transpose: 3,
+    depth: -8,
+    intonation: 70,
+    accent: 58,
+    breath: 8,
+  }),
+  preset('grandma', 'Grandma', 'Gentle, wavering and warm', {
+    gender: 'female',
+    age: 78,
+    pitch: 44,
+    transpose: -2,
+    depth: 6,
+    roughness: 3,
+    vibrato: 30,
+    vibratoRate: 4,
+    speed: 120,
+    breath: 20,
+    brightness: -15,
   }),
   preset('clean', 'Clean source', 'Unprocessed formant speech', {
     transpose: 0,
@@ -392,6 +457,10 @@ export function validateSettings(input) {
       throw new Error(`Invalid ${c.label}.`);
     result[c.key] = value;
   }
+  const gender = input.gender ?? defaults.gender;
+  if (!genders.some((g) => g.value === gender))
+    throw new Error('Invalid Gender.');
+  result.gender = gender;
   return result;
 }
 export function validateRequest(input) {

@@ -21,7 +21,8 @@ npm run build
 
 ## Features
 
-- 16 character presets and 16 working synthesis/effect controls.
+- 19 character presets and 17 working synthesis/effect controls.
+- Male/female voice register and character age (child → elder) shaping of the source voice.
 - Mandarin (Chinese characters), Cantonese, US/UK English, Japanese, Korean, French, German, Spanish, Italian, Brazilian Portuguese, Russian, Hindi, Vietnamese.
 - Source pitch and semitone transposition; independent rate, formant depth, intonation, syllable stress, breath and roughness.
 - Nasal EQ, brightness, vibrato, chorus, ring modulation, sample/bit reduction and output level.
@@ -31,7 +32,7 @@ npm run build
 
 ## Audio architecture
 
-`public/engine/config.js` is the shared settings schema, validation, language list and preset bank. `synthesis.js` builds an eSpeak variant in its virtual filesystem. The semitone knob changes the glottal source's pitch baseline, while depth changes formant resonances directly. This does not resample an existing clip and does not require formant-preserving time stretching. Speech rate is an eSpeak synthesis parameter; stress/accent changes syllable emphasis, not geographic pronunciation.
+`public/engine/config.js` is the shared settings schema, validation, language list and preset bank. `synthesis.js` builds an eSpeak variant in its virtual filesystem. The variant encodes the voice `gender` (male/female), an age-scaled pitch baseline and formant resonances, and age-based `flutter`/`roughness`, so the same synthesis path produces child, adult and elder voices. The semitone knob changes the glottal source's pitch baseline, while depth changes formant resonances directly. This does not resample an existing clip and does not require formant-preserving time stretching. Speech rate is an eSpeak synthesis parameter; stress/accent changes syllable emphasis, not geographic pronunciation.
 
 `dsp.js` processes PCM using biquad filters, modulated delay, ring modulation and sample/bit reduction, followed by DC removal, attenuation-only peak normalization, output gain and short fades. All DSP runs in `worker.js`, keeping synthesis off the UI thread. WAVs are mono 16-bit PCM at 22,050 Hz. `lib/voice/client.ts` handles worker lifetime, cancellation and errors; React only handles state and playback. The “before effects” clip retains synthesis settings but bypasses the DSP section.
 
@@ -51,3 +52,15 @@ Browser UI and subjective listening QA have not been performed. Tests cover each
 - eSpeak NG languages: https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md
 - eSpeak voice parameters: https://github.com/espeak-ng/espeak-ng/blob/master/docs/voices.md
 - Emscripten distribution: https://github.com/echogarden-project/espeak-ng-emscripten
+
+## Interface translations
+
+The header's interface language selector supports English, French, Simplified Chinese (`zh-Hans`) and Traditional Chinese (`zh-Hant`). It is independent of the speech language and does not reset input text, settings or generated audio. The first visit follows the browser's preferred supported language; an explicit selection is saved locally. Traditional Chinese is detected for Taiwan, Hong Kong and Macau unless an explicit script tag says otherwise.
+
+Translations are in `lib/i18n/messages.js`, with English source messages as lookup keys. `core.js` handles locale resolution, interpolation and presentation of engine errors; `use-i18n.ts` handles browser preferences, document language, title and description. Status messages retain keys and values so switching languages also updates an existing message. User-written text and preset names are preserved. Native audio player controls follow the browser's own UI language. Catalog coverage, interpolation, error translation and locale detection are tested; browser interaction QA remains pending.
+
+## Instant preview and presets drawer
+
+“Apply instantly” starts unchecked. When enabled, text, language, knob, reset and preset changes regenerate and attempt to play the voice after a 350 ms pause in edits. Renders are serialized; changes made during a render are picked up afterward, and stale results are not automatically played. Failed attempts do not retry indefinitely. Unchecking stops queued previews; Cancel also disables the option. Browsers may require pressing Play before allowing automatic audio playback. This regenerates clips rather than changing DSP on an already playing buffer.
+
+The Presets side control opens a right-side drawer, closed by default. It contains built-in presets, random selection, and saved-preset/import/export controls. Escape, the close button, or the backdrop dismisses it. Both features are translated into all four interface languages.
