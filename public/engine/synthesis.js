@@ -64,37 +64,64 @@ export function variantDefinition(s) {
     ].join('\n') + '\n'
   );
 }
-export function synthesize(module, engine, request) {
+// eSpeak NG embeds its data under /usr/local/share in the CLI build.
+const VOICES_DIR = '/usr/local/share/espeak-ng-data/voices/!v';
+// Game-style discrete intonation maps to eSpeak's capital-letter pitch emphasis.
+const LILT_LEVELS = [0, 1, 5, 20];
+function decodeWav(bytes) {
+  if (!bytes || bytes.length < 44) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (
+    String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== 'RIFF' ||
+    String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]) !== 'WAVE'
+  )
+    return null;
+  const channels = view.getUint16(22, true);
+  const sampleRate = view.getUint32(24, true);
+  const bits = view.getUint16(34, true);
+  const dataLen = view.getUint32(40, true);
+  const samples = new Float32Array(dataLen / 2);
+  for (let i = 0; i < samples.length; i++)
+    samples[i] = view.getInt16(44 + i * 2, true) / 32768;
+  return { samples, sampleRate, channels, bits };
+}
+export async function synthesize(ESpeakNG, request) {
   const { text, language, settings: s } = validateRequest(request);
-  module.FS.writeFile(
-    '/usr/share/espeak-ng-data/voices/!v/island',
-    variantDefinition(s),
-  );
-  if (engine.set_voice(`${language}+island`) !== 0)
-    throw new Error('This language could not be loaded.');
-  engine.set_pitch(Math.round(s.pitch));
-  engine.set_rate(Math.round(s.speed));
-  engine.set_range(Math.round(s.intonation));
-  engine.set_volume(100);
-  const chunks = [];
-  let length = 0;
-  const phonemes = engine.synthesize_and_get_phonemes(text, (chunk) => {
-    if (chunk.length) {
-      chunks.push(chunk);
-      length += chunk.length;
-    }
-    return false;
+  const args = [
+    '-D',
+    '-v',
+    `${language}+island`,
+    '-s',
+    String(Math.round(s.speed)),
+    '-p',
+    String(Math.round(s.pitch)),
+    '-P',
+    String(clamp(Math.round(s.intonation), 0, 99)),
+    '-k',
+    String(LILT_LEVELS[Math.round(s.lilt ?? 2) - 1] ?? 1),
+    '-g',
+    String(Math.round(s.wordGap ?? 0)),
+    '--ipa',
+    '-w',
+    '/out.wav',
+    text,
+  ];
+  let phonemes = '';
+  const mod = await ESpeakNG({
+    arguments: args,
+    locateFile: (path) => new URL(path, import.meta.url).href,
+    print: (chunk) => {
+      phonemes += chunk + '\n';
+    },
+    printErr: () => {},
+    onRuntimeInitialized() {
+      this.FS.writeFile(`${VOICES_DIR}/island`, variantDefinition(s));
+    },
   });
-  if (length === 0)
+  const decoded = decodeWav(mod.FS.readFile('/out.wav'));
+  if (!decoded || decoded.samples.length === 0)
     throw new Error(
       'The speech engine returned no audio. Try a different phrase.',
     );
-  const samples = new Float32Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length; i++)
-      samples[offset + i] = chunk[i] / 32768;
-    offset += chunk.length;
-  }
-  return { samples, sampleRate: engine.get_samplerate(), phonemes };
+  return { ...decoded, phonemes: phonemes.trim() };
 }

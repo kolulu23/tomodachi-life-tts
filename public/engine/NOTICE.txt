@@ -1,21 +1,22 @@
-Island Voice Lab uses eSpeak NG through @echogarden/espeak-ng-emscripten 0.3.5.
+Island Voice Lab uses eSpeak NG compiled to WebAssembly (the Emscripten CLI build).
 
-Unmodified dependency assets: espeak-ng.js, espeak-ng.data, COPYING (unmodified).
-Copyright belongs to the original eSpeak / eSpeak NG / Echogarden contributors.
+Engine assets: espeak-ng.js (Emscripten CLI loader) and espeak-ng.wasm (eSpeak NG
+compiled to WebAssembly, with its voice and dictionary data embedded).
+Copyright belongs to the original eSpeak / eSpeak NG contributors.
 License: GNU GPL version 3 or later. Full license: /engine/COPYING
 
-Package and exact version:
-https://www.npmjs.com/package/@echogarden/espeak-ng-emscripten/v/0.3.5
-Distribution source and build instructions:
-https://github.com/echogarden-project/espeak-ng-emscripten
-Engine source fork:
-https://github.com/echogarden-project/espeak-ng/tree/fork
 Upstream engine:
 https://github.com/espeak-ng/espeak-ng
 
-The dependency build is Emscripten-compiled JavaScript (not a neural model).
-config.js, synthesis.js, dsp.js, and worker.js are the unminified application audio
-source and are distributed here under GPL-3.0-or-later.
+The CLI build is not published as a first-party package or release artifact. These
+files are vendored from the reference generator's hosted build and pinned by SHA-256
+(see vendor/espeak-ng-cli/SHA256SUMS) so they are reproduced byte-for-byte:
+https://miichart.com/espeak/espeak-ng.js
+https://miichart.com/espeak/espeak-ng.wasm
 
-This is an independent style approximation. No Nintendo or miichart source code,
-audio, brand assets, or proprietary engine files are included.
+The engine is Emscripten-compiled eSpeak NG (not a neural model). config.js,
+synthesis.js, dsp.js, and worker.js are the unminified application audio source and
+are distributed here under GPL-3.0-or-later.
+
+This is an independent style approximation. No Nintendo source code, audio, or
+proprietary engine files are included; no miichart application source code is copied.

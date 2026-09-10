@@ -40,6 +40,6 @@ next-env.d.ts
 # TypeScript incremental cache
 *.tsbuildinfo
 
-# Reproduced from the pinned speech-engine dependency
+# Copied from the vendored speech-engine build (vendor/espeak-ng-cli)
 /public/engine/espeak-ng.js
-/public/engine/espeak-ng.data
+/public/engine/espeak-ng.wasm
