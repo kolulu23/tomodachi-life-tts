@@ -25,7 +25,7 @@ npm run build
 - Male/female voice register and character age (child → elder) shaping of the source voice.
 - Mandarin (Chinese characters), Cantonese, US/UK English, Japanese, Korean, French, German, Spanish, Italian, Brazilian Portuguese, Russian, Hindi, Vietnamese.
 - Source pitch and semitone transposition; independent rate, formant depth, intonation, syllable stress, breath and roughness.
-- Nasal EQ, brightness, vibrato, chorus, ring modulation, sample/bit reduction and output level.
+- Nasal EQ, brightness, vibrato, chorus, ring modulation, a lowpass toy-radio muffle and output level.
 - WAV playback/export, real waveform, before-effects comparison and phoneme trace.
 - Device-local saved presets plus validated JSON import/export.
 - Cancellable worker execution, initialization/generation timeouts, retry states and stale-output indication.
@@ -34,7 +34,7 @@ npm run build
 
 `public/engine/config.js` is the shared settings schema, validation, language list and preset bank. `synthesis.js` builds an eSpeak variant in its virtual filesystem. The variant encodes the voice `gender` (male/female), an age-scaled pitch baseline and formant resonances, and age-based `flutter`/`roughness`, so the same synthesis path produces child, adult and elder voices. The semitone knob changes the glottal source's pitch baseline, while depth changes formant resonances directly. This does not resample an existing clip and does not require formant-preserving time stretching. Speech rate is an eSpeak synthesis parameter; stress/accent changes syllable emphasis, not geographic pronunciation.
 
-`dsp.js` processes PCM using biquad filters, modulated delay, ring modulation and sample/bit reduction, followed by DC removal, attenuation-only peak normalization, output gain and short fades. All DSP runs in `worker.js`, keeping synthesis off the UI thread. WAVs are mono 16-bit PCM at 22,050 Hz. `lib/voice/client.ts` handles worker lifetime, cancellation and errors; React only handles state and playback. The “before effects” clip retains synthesis settings but bypasses the DSP section.
+`dsp.js` runs the reference-aligned “Mii-ify” chain: a 180 Hz high-pass, a 900 Hz nasal-formant peak, a lowpass toy-radio muffle, vibrato and chorus modulated delays, ring modulation, a 2500 Hz brightness shelf and a tanh soft-clip, followed by DC removal, attenuation-only peak normalization, output gain and short fades. All DSP runs in `worker.js`, keeping synthesis off the UI thread. WAVs are mono 16-bit PCM at 22,050 Hz. `lib/voice/client.ts` handles worker lifetime, cancellation and errors; React only handles state and playback. The “before effects” clip retains synthesis settings but bypasses the DSP section.
 
 The engine is the pinned, unmodified Emscripten JavaScript dependency `@echogarden/espeak-ng-emscripten@0.3.5`. It is intentionally served as same-origin assets, avoiding CDN dependencies and bundler transformations of Emscripten. `scripts/prepare-engine.mjs` copies the pinned dependency into the public assets before development, tests, and builds; npm verifies its lockfile integrity. `scripts/vendor-engine.sh` offers an alternative checksum-verified archive extraction. The generated engine JS/data are excluded from Git. See `public/engine/NOTICE.txt` and `LICENSE` for engine sources and licenses. Application code is GPL-3.0-or-later.
 
