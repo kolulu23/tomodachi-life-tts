@@ -11,6 +11,7 @@ import {
 } from '../public/engine/config.js';
 import { synthesize, variantDefinition } from '../public/engine/synthesis.js';
 import { processAudio, encodeWav } from '../public/engine/dsp.js';
+import { pitchShift } from '../public/engine/pitchshift.js';
 function render(
   settings = defaults,
   text = 'Welcome to my little island.',
@@ -110,6 +111,26 @@ test('each DSP control changes PCM and every preset remains finite and unclipped
     assert.ok(peak(wet) <= 0.951, p.id);
     assert.ok(peak(wet) > 0.001, p.id);
   }
+});
+test('Mii pitch shift preserves length and shifts frequency', () => {
+  const sr = 22050,
+    n = sr;
+  const input = new Float32Array(n);
+  for (let i = 0; i < n; i++)
+    input[i] = Math.sin((2 * Math.PI * 220 * i) / sr);
+  const up = pitchShift(input, sr, 12),
+    down = pitchShift(input, sr, -12);
+  assert.ok(Math.abs(up.length - n) < n * 0.02, 'length preserved up');
+  assert.ok(Math.abs(down.length - n) < n * 0.02, 'length preserved down');
+  assert.ok(up.every(Number.isFinite) && down.every(Number.isFinite));
+  assert.ok(
+    toneLevel(up, sr, 440) > toneLevel(up, sr, 220),
+    'up-shift raises frequency',
+  );
+  assert.ok(
+    toneLevel(down, sr, 110) > toneLevel(down, sr, 220),
+    'down-shift lowers frequency',
+  );
 });
 test('Lo-fi control muffles high frequencies rather than bitcrushing', () => {
   const sr = 22050,
