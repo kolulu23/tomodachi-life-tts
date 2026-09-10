@@ -1,4 +1,5 @@
 import { validateRequest } from './config.js';
+import { sentenceLilt } from './prosody.js';
 // Direct formant synthesis: transpose the glottal source, adjust resonances separately.
 // This avoids resampling speech, which would also change timing and Chinese tones.
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -66,8 +67,6 @@ export function variantDefinition(s) {
 }
 // eSpeak NG embeds its data under /usr/local/share in the CLI build.
 const VOICES_DIR = '/usr/local/share/espeak-ng-data/voices/!v';
-// Game-style discrete intonation maps to eSpeak's capital-letter pitch emphasis.
-const LILT_LEVELS = [0, 1, 5, 20];
 function decodeWav(bytes) {
   if (!bytes || bytes.length < 44) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -98,13 +97,15 @@ export async function synthesize(ESpeakNG, request) {
     '-P',
     String(clamp(Math.round(s.intonation), 0, 99)),
     '-k',
-    String(LILT_LEVELS[Math.round(s.lilt ?? 2) - 1] ?? 1),
+    '0', // Do not announce capitals or insert capitalization sounds.
+    '-m',
     '-g',
     String(Math.round(s.wordGap ?? 0)),
     '--ipa',
     '-w',
     '/out.wav',
-    text,
+    '--', // User text must never be parsed as CLI switches.
+    sentenceLilt(text, language, s.lilt),
   ];
   let phonemes = '';
   const mod = await ESpeakNG({

@@ -4,13 +4,15 @@
 // brightness and a ~900 Hz nasal-formant ratio. Reads 16-bit PCM mono/stereo WAV.
 // Usage: node scripts/analyze-voice.mjs <file.wav> [<file2.wav> ...]
 import { readFileSync } from 'node:fs';
+import { estimateF0 } from '../lib/voice/f0.js';
 
 function decodeWav(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (bytes.length < 44) throw new Error('Not a WAV file.');
   const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
   const wave = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
-  if (riff !== 'RIFF' || wave !== 'WAVE') throw new Error('Not a RIFF/WAVE file.');
+  if (riff !== 'RIFF' || wave !== 'WAVE')
+    throw new Error('Not a RIFF/WAVE file.');
   const channels = view.getUint16(22, true);
   const sampleRate = view.getUint32(24, true);
   const bits = view.getUint16(34, true);
@@ -68,29 +70,11 @@ function analyze(file) {
       centroidAcc += cm;
       centroidW += cw;
     }
-    // F0 via normalized autocorrelation, voiced only
-    const minLag = Math.floor(sampleRate / 500);
-    const maxLag = Math.floor(sampleRate / 60);
-    let bestLag = 0,
-      bestCorr = 0;
-    for (let lag = minLag; lag <= maxLag; lag++) {
-      let num = 0,
-        d1 = 0,
-        d2 = 0;
-      for (let i = 0; i < frame - lag; i++) {
-        const a = samples[start + i];
-        const b = samples[start + i + lag];
-        num += a * b;
-        d1 += a * a;
-        d2 += b * b;
-      }
-      const corr = num / (Math.sqrt(d1) * Math.sqrt(d2) || 1);
-      if (corr > bestCorr) {
-        bestCorr = corr;
-        bestLag = lag;
-      }
+    // Reject unvoiced frames; do not mistake period multiples for the F0.
+    if (rms > 0.01) {
+      const f0 = estimateF0(samples, sampleRate, start, frame);
+      if (f0 !== null) f0s.push(f0);
     }
-    if (rms > 0.01 && bestCorr > 0.5) f0s.push(sampleRate / bestLag);
   }
   // pause structure from RMS
   const noiseFloor = Math.max(1e-4, median(rmsFrames) * 0.25);
@@ -104,7 +88,7 @@ function analyze(file) {
       pauseStart = i;
     } else if (!silent && inPause) {
       inPause = false;
-      pauses.push((i - pauseStart) * hop / sampleRate);
+      pauses.push(((i - pauseStart) * hop) / sampleRate);
     }
   }
   const voicedRatio = f0s.length / rmsFrames.length;
@@ -142,8 +126,12 @@ const stats = (a) =>
     : { count: 0 };
 const files = process.argv.slice(2);
 if (!files.length) {
-  console.error('Usage: node scripts/analyze-voice.mjs <file.wav> [<file2.wav> ...]');
+  console.error(
+    'Usage: node scripts/analyze-voice.mjs <file.wav> [<file2.wav> ...]',
+  );
   process.exit(1);
 }
 const results = files.map(analyze);
-console.log(JSON.stringify(results.length === 1 ? results[0] : results, null, 2));
+console.log(
+  JSON.stringify(results.length === 1 ? results[0] : results, null, 2),
+);

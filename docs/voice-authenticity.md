@@ -45,6 +45,14 @@ Real in-game voice presets (parameter values from the game's data):
 
 ## Measured comparison
 
+> **Historical results — F0 comparison invalidated by review.** The original
+> autocorrelation estimator measured a known 220 Hz tone as 73.39 Hz at 16 kHz
+> and 220.5 Hz at 22.05 kHz. The estimator has been corrected and tested, but
+> the real-game samples were not retained, so the table below has not been
+> regenerated. Its F0 agreement is not evidence of successful tuning. See
+> [review-fixes.md](review-fixes.md) for controlled before/after results.
+
+
 Same text ("Hello! Welcome to my little island."), our default voice vs the
 real adult-male voice:
 

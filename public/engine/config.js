@@ -88,7 +88,7 @@ export const controls = [
     step: 1,
     unit: '',
     group: 'voice',
-    hint: 'Sing-song pitch lift on sentence starts.',
+    hint: 'Raise the pitch of the opening phrase of each sentence. Level 1 is off.',
   },
   {
     key: 'accent',
@@ -486,6 +486,8 @@ export const presets = [
     intonation: 30,
   }),
 ];
+// One source of truth for the selected voice on initial load and Reset.
+export const initialPreset = presets[0];
 export function validateSettings(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw new Error('Voice settings must be an object.');
