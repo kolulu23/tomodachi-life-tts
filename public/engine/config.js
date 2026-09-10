@@ -158,7 +158,7 @@ export const controls = [
     step: 1,
     unit: '%',
     group: 'effects',
-    hint: 'Reduce sample resolution for retro digital grit.',
+    hint: 'Muffle the highs for a toy-radio roll-off.',
   },
   {
     key: 'volume',
