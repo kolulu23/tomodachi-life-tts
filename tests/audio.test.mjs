@@ -21,6 +21,19 @@ function render(
   return synthesize(module, engine, { text, language, settings });
 }
 const peak = (a) => a.reduce((p, x) => Math.max(p, Math.abs(x)), 0);
+// Single-frequency magnitude via Goertzel, for low-level spectral checks.
+const toneLevel = (a, sr, freq) => {
+  const coeff = 2 * Math.cos((2 * Math.PI * freq) / sr);
+  let s0 = 0,
+    s1 = 0,
+    s2 = 0;
+  for (const x of a) {
+    s0 = x + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - coeff * s1 * s2));
+};
 test('all advertised languages synthesize real nonempty audio and phonemes', () => {
   for (const language of languages) {
     const audio = render(defaults, language.sample, language.id);
@@ -97,6 +110,23 @@ test('each DSP control changes PCM and every preset remains finite and unclipped
     assert.ok(peak(wet) <= 0.951, p.id);
     assert.ok(peak(wet) > 0.001, p.id);
   }
+});
+test('Lo-fi control muffles high frequencies rather than bitcrushing', () => {
+  const sr = 22050,
+    n = sr;
+  const input = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    input[i] =
+      0.5 * Math.sin(2 * Math.PI * 1000 * t) +
+      0.5 * Math.sin(2 * Math.PI * 8000 * t);
+  }
+  const clean = { ...defaults, nasal: 0, brightness: 0, vibrato: 0, chorus: 0, robot: 0, crush: 0, volume: 100 };
+  const flat = processAudio(input, sr, clean),
+    muffled = processAudio(input, sr, { ...clean, crush: 100 });
+  const ratio = (a) => toneLevel(a, sr, 8000) / toneLevel(a, sr, 1000);
+  assert.ok(ratio(muffled) < ratio(flat) * 0.5, 'highs should be rolled off');
+  assert.ok(peak(muffled) <= 0.951, 'soft-clipped output stays bounded');
 });
 test('extreme settings, silence and zero volume stay safe', () => {
   const extreme = Object.fromEntries(controls.map((c) => [c.key, c.max]));
