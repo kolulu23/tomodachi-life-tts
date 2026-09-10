@@ -178,7 +178,7 @@ export const defaults = {
   transpose: 3,
   speed: 175,
   depth: -8,
-  intonation: 55,
+  intonation: 40,
   accent: 40,
   breath: 0,
   roughness: 1,
@@ -266,7 +266,15 @@ const preset = (id, name, description, settings) => ({
   settings: { ...defaults, ...settings },
 });
 export const presets = [
-  preset('islander', 'Islander', 'Bright, familiar chatter', {}),
+  preset('islander', 'Islander', 'Bright, familiar chatter', {
+    transpose: 5,
+    nasal: 55,
+    vibrato: 25,
+    chorus: 30,
+    brightness: 50,
+    crush: 15,
+    intonation: 20,
+  }),
   preset('tiny', 'Tiny neighbor', 'Small and full of energy', {
     gender: 'female',
     age: 9,
@@ -366,6 +374,7 @@ export const presets = [
     roughness: 4,
     vibrato: 45,
     vibratoRate: 4,
+    intonation: 25,
   }),
   preset('story', 'Storyteller', 'Clear and expressive', {
     gender: 'male',
@@ -429,6 +438,7 @@ export const presets = [
     speed: 120,
     breath: 20,
     brightness: -15,
+    intonation: 30,
   }),
   preset('clean', 'Clean source', 'Unprocessed formant speech', {
     transpose: 0,
@@ -439,7 +449,7 @@ export const presets = [
     chorus: 0,
     crush: 0,
     roughness: 0,
-    intonation: 50,
+    intonation: 30,
   }),
 ];
 export function validateSettings(input) {
