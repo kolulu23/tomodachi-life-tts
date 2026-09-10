@@ -1,0 +1,21 @@
+Island Voice Lab uses eSpeak NG through @echogarden/espeak-ng-emscripten 0.3.5.
+
+Vendored files: espeak-ng.js, espeak-ng.data, COPYING (unmodified).
+Copyright belongs to the original eSpeak / eSpeak NG / Echogarden contributors.
+License: GNU GPL version 3 or later. Full license: /engine/COPYING
+
+Package and exact version:
+https://www.npmjs.com/package/@echogarden/espeak-ng-emscripten/v/0.3.5
+Distribution source and build instructions:
+https://github.com/echogarden-project/espeak-ng-emscripten
+Engine source fork:
+https://github.com/echogarden-project/espeak-ng/tree/fork
+Upstream engine:
+https://github.com/espeak-ng/espeak-ng
+
+The vendored build is Emscripten-compiled JavaScript (not a neural model).
+config.js, synthesis.js, dsp.js, and worker.js are the unminified application audio
+source and are distributed here under GPL-3.0-or-later.
+
+This is an independent style approximation. No Nintendo or miichart source code,
+audio, brand assets, or proprietary engine files are included.
